@@ -29,7 +29,7 @@ object VexRiscv_vdw_0{
       val cpuConfig = VexRiscvConfig(
         plugins = List(
         new IBusSimplePlugin(
-          resetVector = 0x00000200l,
+          resetVector = 0x00000000l,
           cmdForkOnSecondStage = false,
           cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
           prediction = NONE,
