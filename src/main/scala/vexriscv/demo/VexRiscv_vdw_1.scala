@@ -9,6 +9,8 @@ import vexriscv.ip.{DataCacheConfig, InstructionCacheConfig}
 import vexriscv.plugin._
 import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
 
+import scala.collection.mutable.ArrayBuffer
+
 /**
  * Created by spinalvm on 14.07.17.
  */
@@ -24,14 +26,65 @@ import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
 // - add mul and div insns
 
 
+case class ArgConfig(
+  simulcsr : Boolean = false
+)
+
+
+case class CsrSimul() extends Bundle with IMasterSlave{
+  val done   = Bool()
+  val result = Bool()
+  val testnr = Bits(32 bits)
+  override def asMaster(): Unit = {
+      out(done, result, testnr)
+  }
+}
+
+class CsrSimulPlugin(simDoneCsrId   : Int = 0x7F0,
+                     simResultCsrId : Int = 0x7F1,
+                     simTestNrCsrId : Int = 0x7F2) extends Plugin[VexRiscv]{
+  var csrsimul : CsrSimul = null
+  
+
+  override def setup(pipeline: VexRiscv): Unit = {
+    csrsimul = master(CsrSimul()).setName("simcsr")
+  }
+
+  override def build(pipeline: VexRiscv): Unit = {
+    import pipeline._
+    import pipeline.config._
+
+    pipeline plug new Area{
+      val doneReg   = Reg(Bool())
+      val resultReg = Reg(Bool())
+      val testnrReg = Reg(Bits(32 bits))
+
+      val csrService = pipeline.service(classOf[CsrInterface])
+      csrService.w(simDoneCsrId,   doneReg)
+      csrService.w(simResultCsrId, resultReg)
+      csrService.w(simTestNrCsrId, testnrReg)
+
+      csrsimul.done   := doneReg
+      csrsimul.result := resultReg
+      csrsimul.testnr := testnrReg
+    }
+  }
+}
+
 object VexRiscv_vdw_1{
   def main(args: Array[String]) {
+    
+    val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {
+      opt[Boolean]("simulcsr")    action { (v, c) => c.copy(simulcsr = v)   } text("add csr's for simulation status report")
+    }
+    val argConfig = parser.parse(args, ArgConfig()).get
     
     val report = SpinalVerilog{
 
       //CPU configuration
-      val cpuConfig = VexRiscvConfig(
-        plugins = List(
+        val plugins = ArrayBuffer[Plugin[VexRiscv]]()
+      
+        plugins ++= List(
         //~ new IBusSimplePlugin(
           //~ resetVector = 0x00000000l,
           //~ cmdForkOnSecondStage = false,
@@ -76,7 +129,8 @@ object VexRiscv_vdw_1{
           )
         ),
         new StaticMemoryTranslatorPlugin(
-          ioRange      = _(31 downto 28) === 0xF
+          //ioRange      = _(31 downto 28) === 0xF
+          ioRange      = _.msb 
         ),
         new CsrPlugin(CsrPluginConfig.smallest),
         new DecoderSimplePlugin(
@@ -108,7 +162,24 @@ object VexRiscv_vdw_1{
           catchAddressMisaligned = true
         ),
         new YamlPlugin("cpu0.yaml")        )
-      )
+      
+
+      if(argConfig.simulcsr) {
+        plugins ++= List(
+            new CsrSimulPlugin()
+        )
+      }
+      
+      val cpuConfig = VexRiscvConfig(plugins)
+      
+      //~ if(argConfig.externalInterruptArray) plugins ++= List(
+        //~ new ExternalInterruptArrayPlugin(
+          //~ machineMaskCsrId = 0xBC0,
+          //~ machinePendingsCsrId = 0xFC0,
+          //~ supervisorMaskCsrId = 0x9C0,
+          //~ supervisorPendingsCsrId = 0xDC0
+        //~ )
+      //~ )
 
       //CPU instanciation
       val cpu = new VexRiscv(cpuConfig)
@@ -158,6 +229,8 @@ object VexRiscv_vdw_1{
             plugin.externalInterrupt
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
             plugin.timerInterrupt
+              .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
+            plugin.softwareInterrupt
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
           }
           case _ =>
