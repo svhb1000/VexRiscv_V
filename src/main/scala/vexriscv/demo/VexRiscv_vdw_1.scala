@@ -27,11 +27,12 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class ArgConfig(
-  simulcsr : Boolean = false
+  simulcsr : Boolean = false,
+  usecache : Boolean = true
 )
 
 
-case class CsrSimul() extends Bundle with IMasterSlave{
+case class CsrSimulIf() extends Bundle with IMasterSlave{
   val done   = Bool()
   val result = Bool()
   val testnr = Bits(32 bits)
@@ -43,11 +44,11 @@ case class CsrSimul() extends Bundle with IMasterSlave{
 class CsrSimulPlugin(simDoneCsrId   : Int = 0x7F0,
                      simResultCsrId : Int = 0x7F1,
                      simTestNrCsrId : Int = 0x7F2) extends Plugin[VexRiscv]{
-  var csrsimul : CsrSimul = null
+  var csrsimul : CsrSimulIf = null
   
 
   override def setup(pipeline: VexRiscv): Unit = {
-    csrsimul = master(CsrSimul()).setName("simcsr")
+    csrsimul = master(CsrSimulIf()).setName("simcsr")
   }
 
   override def build(pipeline: VexRiscv): Unit = {
@@ -76,6 +77,7 @@ object VexRiscv_vdw_1{
     
     val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {
       opt[Boolean]("simulcsr")    action { (v, c) => c.copy(simulcsr = v)   } text("add csr's for simulation status report")
+      opt[Boolean]("usecache")    action { (v, c) => c.copy(usecache = v)   } text("infer cache on instruction and databus")
     }
     val argConfig = parser.parse(args, ArgConfig()).get
     
@@ -84,54 +86,61 @@ object VexRiscv_vdw_1{
       //CPU configuration
         val plugins = ArrayBuffer[Plugin[VexRiscv]]()
       
+        if(argConfig.usecache) {
+            plugins ++= List(
+                new IBusCachedPlugin(
+                  prediction = DYNAMIC_TARGET,
+                  historyRamSizeLog2 = 8,
+                  resetVector = 0x00000000l,
+                  config = InstructionCacheConfig(
+                    cacheSize = 4096,
+                    bytePerLine =32,
+                    wayCount = 1,
+                    addressWidth = 32,
+                    cpuDataWidth = 32,
+                    memDataWidth = 32,
+                    catchIllegalAccess = true,
+                    catchAccessFault = true,
+                    asyncTagMemory = false,
+                    twoCycleRam = false,
+                    twoCycleCache = true
+                  )
+                ),        
+                new DBusCachedPlugin(
+                  config = new DataCacheConfig(
+                    cacheSize         = 4096,
+                    bytePerLine       = 32,
+                    wayCount          = 1,
+                    addressWidth      = 32,
+                    cpuDataWidth      = 32,
+                    memDataWidth      = 32,
+                    catchAccessError  = true,
+                    catchIllegal      = true,
+                    catchUnaligned    = true
+                  )
+                ),
+                new StaticMemoryTranslatorPlugin(
+                  //~ //ioRange      = _(31 downto 28) === 0xF
+                 ioRange      = ( _.msb )
+                ))
+        }
+        else {  
+            plugins ++= List(
+                new IBusSimplePlugin(
+                  resetVector = 0x00000000l,
+                  cmdForkOnSecondStage = false,
+                  cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
+                  prediction = NONE,
+                  catchAccessFault = false,
+                  compressedGen = false
+                ),
+                new DBusSimplePlugin(
+                  catchAddressMisaligned = false,
+                  catchAccessFault = false
+                ))
+        }
+        
         plugins ++= List(
-        //~ new IBusSimplePlugin(
-          //~ resetVector = 0x00000000l,
-          //~ cmdForkOnSecondStage = false,
-          //~ cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
-          //~ prediction = NONE,
-          //~ catchAccessFault = false,
-          //~ compressedGen = false
-        //~ ),
-        //~ new DBusSimplePlugin(
-          //~ catchAddressMisaligned = false,
-          //~ catchAccessFault = false
-        //~ ),
-        new IBusCachedPlugin(
-          prediction = DYNAMIC_TARGET,
-          historyRamSizeLog2 = 8,
-          resetVector = 0x00000000l,
-          config = InstructionCacheConfig(
-            cacheSize = 4096,
-            bytePerLine =32,
-            wayCount = 1,
-            addressWidth = 32,
-            cpuDataWidth = 32,
-            memDataWidth = 32,
-            catchIllegalAccess = true,
-            catchAccessFault = true,
-            asyncTagMemory = false,
-            twoCycleRam = false,
-            twoCycleCache = true
-          )
-        ),        
-        new DBusCachedPlugin(
-          config = new DataCacheConfig(
-            cacheSize         = 4096,
-            bytePerLine       = 32,
-            wayCount          = 1,
-            addressWidth      = 32,
-            cpuDataWidth      = 32,
-            memDataWidth      = 32,
-            catchAccessError  = true,
-            catchIllegal      = true,
-            catchUnaligned    = true
-          )
-        ),
-        new StaticMemoryTranslatorPlugin(
-          //ioRange      = _(31 downto 28) === 0xF
-          ioRange      = _.msb 
-        ),
         new CsrPlugin(CsrPluginConfig.smallest),
         new DecoderSimplePlugin(
           catchIllegalInstruction = false
@@ -161,9 +170,9 @@ object VexRiscv_vdw_1{
           earlyBranch = false,
           catchAddressMisaligned = true
         ),
-        new YamlPlugin("cpu0.yaml")        )
+        new YamlPlugin("cpu0.yaml")        
+      )
       
-
       if(argConfig.simulcsr) {
         plugins ++= List(
             new CsrSimulPlugin()
