@@ -141,7 +141,7 @@ object VexRiscv_vdw_1{
         }
         
         plugins ++= List(
-        new CsrPlugin(CsrPluginConfig.smallest),
+        new CsrPlugin(CsrPluginConfig.smallest(0x00000120l)),
         new DecoderSimplePlugin(
           catchIllegalInstruction = false
         ),
@@ -178,17 +178,20 @@ object VexRiscv_vdw_1{
             new CsrSimulPlugin()
         )
       }
+
+      //Irq controller in csr-space
+      plugins ++= List(
+        new ExternalInterruptArrayPlugin(
+          machineMaskCsrId        = 0xBC0,
+          machinePendingsCsrId    = 0xFC0
+          //supervisorMaskCsrId     = 0x9C0,  only useful when supervisorGen is true in csr config
+          //supervisorPendingsCsrId = 0xDC0
+        )
+      )
+
       
       val cpuConfig = VexRiscvConfig(plugins)
       
-      //~ if(argConfig.externalInterruptArray) plugins ++= List(
-        //~ new ExternalInterruptArrayPlugin(
-          //~ machineMaskCsrId = 0xBC0,
-          //~ machinePendingsCsrId = 0xFC0,
-          //~ supervisorMaskCsrId = 0x9C0,
-          //~ supervisorPendingsCsrId = 0xDC0
-        //~ )
-      //~ )
 
       //CPU instanciation
       val cpu = new VexRiscv(cpuConfig)
