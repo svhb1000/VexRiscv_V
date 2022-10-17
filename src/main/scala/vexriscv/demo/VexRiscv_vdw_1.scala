@@ -28,7 +28,8 @@ import scala.collection.mutable.ArrayBuffer
 
 case class ArgConfig(
   simulcsr : Boolean = false,
-  usecache : Boolean = true
+  usecache : Boolean = true,
+  compressed : Boolean = false
 )
 
 
@@ -78,6 +79,7 @@ object VexRiscv_vdw_1{
     val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {
       opt[Boolean]("simulcsr")    action { (v, c) => c.copy(simulcsr = v)   } text("add csr's for simulation status report")
       opt[Boolean]("usecache")    action { (v, c) => c.copy(usecache = v)   } text("infer cache on instruction and databus")
+      opt[Boolean]("compressed")    action { (v, c) => c.copy(compressed = v)   } text("infer cpu with compressed instruction set")
     }
     val argConfig = parser.parse(args, ArgConfig()).get
     
@@ -92,6 +94,7 @@ object VexRiscv_vdw_1{
                   prediction = DYNAMIC_TARGET,
                   historyRamSizeLog2 = 8,
                   resetVector = 0x00000000l,
+                  compressedGen = argConfig.compressed,
                   config = InstructionCacheConfig(
                     cacheSize = 4096,
                     bytePerLine =32,
@@ -103,7 +106,7 @@ object VexRiscv_vdw_1{
                     catchAccessFault = true,
                     asyncTagMemory = false,
                     twoCycleRam = false,
-                    twoCycleCache = true
+                    twoCycleCache = !argConfig.compressed   //true --> must be false when compressedGen is chosen to be true
                   )
                 ),        
                 new DBusCachedPlugin(
@@ -132,7 +135,7 @@ object VexRiscv_vdw_1{
                   cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
                   prediction = NONE,
                   catchAccessFault = false,
-                  compressedGen = false
+                  compressedGen = true
                 ),
                 new DBusSimplePlugin(
                   catchAddressMisaligned = false,
@@ -141,7 +144,30 @@ object VexRiscv_vdw_1{
         }
         
         plugins ++= List(
-        new CsrPlugin(CsrPluginConfig.smallest(0x00000120l)),
+        new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
+                        hardwareBreakpointCount=2),
+        new CsrPlugin(//CsrPluginConfig.smallest),
+            CsrPluginConfig(
+                    catchIllegalAccess = false,
+                    mvendorid      = null,
+                    marchid        = null,
+                    mimpid         = null,
+                    mhartid        = null,
+                    misaExtensionsInit = 66,
+                    misaAccess     = CsrAccess.NONE,
+                    mtvecAccess    = CsrAccess.READ_WRITE,
+                    mtvecInit      = 0x00000020l,
+                    mepcAccess     = CsrAccess.READ_WRITE,
+                    mscratchGen    = true,
+                    mcauseAccess   = CsrAccess.READ_ONLY,
+                    mbadaddrAccess = CsrAccess.READ_ONLY,
+                    mcycleAccess   = CsrAccess.READ_ONLY,
+                    minstretAccess = CsrAccess.READ_WRITE,
+                    ecallGen       = false,
+                    wfiGenAsWait   = false,
+                    ucycleAccess   = CsrAccess.NONE,
+                    uinstretAccess = CsrAccess.NONE
+                )),
         new DecoderSimplePlugin(
           catchIllegalInstruction = false
         ),
@@ -227,9 +253,11 @@ object VexRiscv_vdw_1{
           }
           case plugin: DebugPlugin => plugin.debugClockDomain {
             plugin.io.bus.setAsDirectionLess()
+            
             val jtag = slave(new Jtag())
               .setName("jtag")
             jtag <> plugin.io.bus.fromJtag()
+            
             plugin.io.resetOut
               .addTag(ResetEmitterTag(plugin.debugClockDomain))
               .parent = null //Avoid the io bundle to be interpreted as a QSys conduit
@@ -245,8 +273,15 @@ object VexRiscv_vdw_1{
             plugin.softwareInterrupt
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
           }
+          case plugin: ExternalInterruptArrayPlugin => {
+            plugin.externalInterruptArray
+              .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
+          }  
           case _ =>
         }
+
+
+
       }
       cpu
     }
