@@ -27,9 +27,14 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class ArgConfig(
-  simulcsr : Boolean = false,
-  usecache : Boolean = true,
-  compressed : Boolean = false
+  simulcsr   : Boolean = false,
+  iCacheSize : Int = 4096,
+  dCacheSize : Int = 4096,
+  compressed : Boolean = false,
+  imemdw     : Int = 32,
+  tightiport : Boolean = false,
+  tc_mask    : BigInt = 0xFFFF0000l,
+  tc_addr    : BigInt = 0x00010000l
 )
 
 
@@ -78,8 +83,14 @@ object VexRiscv_vdw_1{
     
     val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {
       opt[Boolean]("simulcsr")    action { (v, c) => c.copy(simulcsr = v)   } text("add csr's for simulation status report")
-      opt[Boolean]("usecache")    action { (v, c) => c.copy(usecache = v)   } text("infer cache on instruction and databus")
-      opt[Boolean]("compressed")    action { (v, c) => c.copy(compressed = v)   } text("infer cpu with compressed instruction set")
+      opt[Boolean]("compressed")  action { (v, c) => c.copy(compressed = v)   } text("infer cpu with compressed instruction set")
+      
+      opt[Int]("iCacheSize")     action { (v, c) => c.copy(iCacheSize = v) } text("Set instruction cache size, 0 mean no cache")
+      opt[Int]("dCacheSize")     action { (v, c) => c.copy(dCacheSize = v) } text("Set data cache size, 0 mean no cache")
+      opt[Int]("imemdw")         action { (v, c) => c.copy(imemdw = v) }     text("Set instruction bus datawidth")
+      opt[Boolean]("tightiport")    action { (v, c) => c.copy(tightiport = v)   } text("add a tightly coupled instruction port to the datacache")
+      opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("mask applied toaddress of tightlycoupled ram")
+      opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for tightlycoupled ram")
     }
     val argConfig = parser.parse(args, ArgConfig()).get
     
@@ -88,30 +99,48 @@ object VexRiscv_vdw_1{
       //CPU configuration
         val plugins = ArrayBuffer[Plugin[VexRiscv]]()
       
-        if(argConfig.usecache) {
-            plugins ++= List(
-                new IBusCachedPlugin(
+        if(argConfig.iCacheSize > 0) {
+            val icache = new IBusCachedPlugin(
                   prediction = DYNAMIC_TARGET,
                   historyRamSizeLog2 = 8,
                   resetVector = 0x00000000l,
                   compressedGen = argConfig.compressed,
                   config = InstructionCacheConfig(
-                    cacheSize = 4096,
+                    cacheSize = argConfig.iCacheSize,
                     bytePerLine =32,
                     wayCount = 1,
                     addressWidth = 32,
                     cpuDataWidth = 32,
-                    memDataWidth = 32,
+                    memDataWidth = argConfig.imemdw,
                     catchIllegalAccess = true,
-                    catchAccessFault = true,
-                    asyncTagMemory = false,
-                    twoCycleRam = false,
-                    twoCycleCache = !argConfig.compressed   //true --> must be false when compressedGen is chosen to be true
+                    catchAccessFault   = true,
+                    asyncTagMemory     = false,
+                    twoCycleRam        = false,
+                    twoCycleCache      = !argConfig.compressed   //true --> must be false when compressedGen is chosen to be true
                   )
-                ),        
+                )
+            if (argConfig.tightiport) {
+                icache.newTightlyCoupledPort(TightlyCoupledPortParameter("iBusTc", a => (a & argConfig.tc_mask) === argConfig.tc_addr))  // a => a(30 downto 28) === 0x0 && a(5)))
+            }
+            plugins ++= List(icache)
+        }      
+        else {  
+            plugins ++= List(
+                new IBusSimplePlugin(
+                  resetVector = 0x00000000l,
+                  cmdForkOnSecondStage = false,
+                  cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
+                  prediction = NONE,
+                  catchAccessFault = false,
+                  compressedGen = true
+                )
+            )
+        }
+        if(argConfig.dCacheSize > 0) {
+            plugins ++= List (
                 new DBusCachedPlugin(
                   config = new DataCacheConfig(
-                    cacheSize         = 4096,
+                    cacheSize         = argConfig.dCacheSize,
                     bytePerLine       = 32,
                     wayCount          = 1,
                     addressWidth      = 32,
@@ -122,21 +151,21 @@ object VexRiscv_vdw_1{
                     catchUnaligned    = true
                   )
                 ),
-                new StaticMemoryTranslatorPlugin(
-                  //~ //ioRange      = _(31 downto 28) === 0xF
-                 ioRange      = ( _.msb )
-                ))
+                if (argConfig.tightiport) {
+                    new StaticMemoryTranslatorPlugin(
+                        ioRange      = a => (a.msb) || ((a & argConfig.tc_mask) === argConfig.tc_addr)
+                        //ioRange      = ( _.msb )
+                        )
+                }
+                else {
+                    new StaticMemoryTranslatorPlugin(
+                       ioRange      = ( _.msb )
+                    )
+                }
+            )
         }
         else {  
             plugins ++= List(
-                new IBusSimplePlugin(
-                  resetVector = 0x00000000l,
-                  cmdForkOnSecondStage = false,
-                  cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
-                  prediction = NONE,
-                  catchAccessFault = false,
-                  compressedGen = true
-                ),
                 new DBusSimplePlugin(
                   catchAddressMisaligned = false,
                   catchAccessFault = false
@@ -247,9 +276,13 @@ object VexRiscv_vdw_1{
           }
           case plugin: DBusCachedPlugin => {
             plugin.dBus.setAsDirectionLess()
+            
+            //master(plugin.dBus.toWishbone()).setName("dBusWishbone")
+            
             master(plugin.dBus.toAvalon())
               .setName("dBusAvalon")
               .addTag(ClockDomainTag(ClockDomain.current))
+              
           }
           case plugin: DebugPlugin => plugin.debugClockDomain {
             plugin.io.bus.setAsDirectionLess()
