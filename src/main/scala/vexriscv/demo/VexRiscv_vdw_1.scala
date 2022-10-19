@@ -34,7 +34,8 @@ case class ArgConfig(
   imemdw     : Int = 32,
   tightiport : Boolean = false,
   tc_mask    : BigInt = 0xFFFF0000l,
-  tc_addr    : BigInt = 0x00010000l
+  tc_addr    : BigInt = 0x00010000l,
+  reset_vector : BigInt = 0x00000000l
 )
 
 
@@ -91,6 +92,9 @@ object VexRiscv_vdw_1{
       opt[Boolean]("tightiport")    action { (v, c) => c.copy(tightiport = v)   } text("add a tightly coupled instruction port to the datacache")
       opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("mask applied toaddress of tightlycoupled ram")
       opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for tightlycoupled ram")
+
+      opt[BigInt]("reset_vector")        action { (v, c) => c.copy(reset_vector = v) } text("reset vector")
+
     }
     val argConfig = parser.parse(args, ArgConfig()).get
     
@@ -103,7 +107,7 @@ object VexRiscv_vdw_1{
             val icache = new IBusCachedPlugin(
                   prediction = DYNAMIC_TARGET,
                   historyRamSizeLog2 = 8,
-                  resetVector = 0x00000000l,
+                  resetVector = argConfig.reset_vector,
                   compressedGen = argConfig.compressed,
                   config = InstructionCacheConfig(
                     cacheSize = argConfig.iCacheSize,
@@ -127,7 +131,7 @@ object VexRiscv_vdw_1{
         else {  
             plugins ++= List(
                 new IBusSimplePlugin(
-                  resetVector = 0x00000000l,
+                  resetVector = argConfig.reset_vector,
                   cmdForkOnSecondStage = false,
                   cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
                   prediction = NONE,
