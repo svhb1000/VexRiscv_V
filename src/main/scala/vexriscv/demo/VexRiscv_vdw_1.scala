@@ -280,13 +280,9 @@ object VexRiscv_vdw_1{
           }
           case plugin: DBusCachedPlugin => {
             plugin.dBus.setAsDirectionLess()
-            
-            //master(plugin.dBus.toWishbone()).setName("dBusWishbone")
-            
             master(plugin.dBus.toAvalon())
               .setName("dBusAvalon")
               .addTag(ClockDomainTag(ClockDomain.current))
-              
           }
           case plugin: DebugPlugin => plugin.debugClockDomain {
             plugin.io.bus.setAsDirectionLess()
@@ -305,9 +301,9 @@ object VexRiscv_vdw_1{
           case plugin: CsrPlugin => {
             plugin.externalInterrupt
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
-            plugin.timerInterrupt
+            plugin.timerInterrupt //:= False
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
-            plugin.softwareInterrupt
+            plugin.softwareInterrupt //:= False
               .addTag(InterruptReceiverTag(iBus, ClockDomain.current))
           }
           case plugin: ExternalInterruptArrayPlugin => {
@@ -316,9 +312,6 @@ object VexRiscv_vdw_1{
           }  
           case _ =>
         }
-
-
-
       }
       cpu
     }
