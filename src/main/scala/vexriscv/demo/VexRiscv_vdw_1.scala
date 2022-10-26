@@ -32,6 +32,7 @@ case class ArgConfig(
   dCacheSize : Int = 4096,
   compressed : Boolean = false,
   imemdw     : Int = 32,
+  fullshifter: Boolean = false,
   tightiport : Boolean = false,
   tc_mask    : BigInt = 0xFFFF0000l,
   tc_addr    : BigInt = 0x00010000l,
@@ -89,6 +90,10 @@ object VexRiscv_vdw_1{
       opt[Int]("iCacheSize")     action { (v, c) => c.copy(iCacheSize = v) } text("Set instruction cache size, 0 mean no cache")
       opt[Int]("dCacheSize")     action { (v, c) => c.copy(dCacheSize = v) } text("Set data cache size, 0 mean no cache")
       opt[Int]("imemdw")         action { (v, c) => c.copy(imemdw = v) }     text("Set instruction bus datawidth")
+      
+      opt[Boolean]("fullshifter")  action { (v, c) => c.copy(fullshifter = v)   } text("use full barrel shifter instead of tiny slower implementation")
+      
+      
       opt[Boolean]("tightiport")    action { (v, c) => c.copy(tightiport = v)   } text("add a tightly coupled instruction port to the datacache")
       opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("mask applied toaddress of tightlycoupled ram")
       opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for tightlycoupled ram")
@@ -213,7 +218,14 @@ object VexRiscv_vdw_1{
           separatedAddSub = false,
           executeInsertion = true
         ),
-        new LightShifterPlugin,
+
+        if (argConfig.fullshifter) {
+            new FullBarrelShifterPlugin(earlyInjection = true)
+        }
+        else {
+            new LightShifterPlugin
+        },
+
         new HazardSimplePlugin(
           bypassExecute           = true,
           bypassMemory            = true,
