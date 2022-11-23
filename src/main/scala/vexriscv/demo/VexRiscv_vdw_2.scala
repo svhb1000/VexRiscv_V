@@ -270,7 +270,10 @@ object VexRiscv_vdw_2{
           statusCsrOffset = -1,        //make sure no csr is generated, otherwise an error will be generated
           encodings = List(
             CfuPluginEncoding (
-              instruction = M"-------------------------0101011", //choose 'custom1', see as R-type insn like 'OP' (ADD, SUB, ...)
+              instruction = M"-------------------------0-01011", 
+                    // bit 5 :     
+                        //choose 'custom0', see as I-type insn like 'OP-IMM' (ADDI, SUBI, ...)
+                        //choose 'custom1', see as R-type insn like 'OP' (ADD, SUB, ...)
               functionId = List(14 downto 12),
               input2Kind = CfuPlugin.Input2Kind.RS
             )
