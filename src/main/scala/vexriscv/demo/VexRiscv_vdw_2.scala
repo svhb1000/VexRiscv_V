@@ -44,14 +44,23 @@ case class CsrSimulIf_2() extends Bundle with IMasterSlave{
   val done   = Bool()
   val result = Bool()
   val testnr = Bits(32 bits)
+  val stdout = Bits(32 bits)
+  
+  val stdin        = Bits(32 bits)
+  val sim_settings = Bits(32 bits)
+  
   override def asMaster(): Unit = {
-      out(done, result, testnr)
+      out(done, result, testnr, stdout);
+      in(stdin, sim_settings)
   }
 }
 
 class CsrSimulPlugin_2(simDoneCsrId   : Int = 0x7F0,
-                     simResultCsrId : Int = 0x7F1,
-                     simTestNrCsrId : Int = 0x7F2) extends Plugin[VexRiscv]{
+                     simResultCsrId   : Int = 0x7F1,
+                     simTestNrCsrId   : Int = 0x7F2,
+                     simStdOutCsrId   : Int = 0x7F3,
+                     simStdInCsrId    : Int = 0x7F4,
+                     simSettingsCsrId : Int = 0x7F5) extends Plugin[VexRiscv]{
   var csrsimul : CsrSimulIf_2 = null
   
 
@@ -67,15 +76,23 @@ class CsrSimulPlugin_2(simDoneCsrId   : Int = 0x7F0,
       val doneReg   = Reg(Bool())
       val resultReg = Reg(Bool())
       val testnrReg = Reg(Bits(32 bits))
+      
+      val stdoutReg = Reg(Bits(32 bits))
+      
 
       val csrService = pipeline.service(classOf[CsrInterface])
       csrService.w(simDoneCsrId,   doneReg)
       csrService.w(simResultCsrId, resultReg)
       csrService.w(simTestNrCsrId, testnrReg)
 
+      csrService.w(simStdOutCsrId, stdoutReg)
+      csrService.r(simStdInCsrId, csrsimul.stdin)
+      csrService.r(simSettingsCsrId, csrsimul.sim_settings)
+
       csrsimul.done   := doneReg
       csrsimul.result := resultReg
       csrsimul.testnr := testnrReg
+      csrsimul.stdout := stdoutReg
     }
   }
 }
@@ -246,7 +263,7 @@ object VexRiscv_vdw_2{
       
       if(argConfig.simulcsr) {
         plugins ++= List(
-            new CsrSimulPlugin()
+            new CsrSimulPlugin_2()
         )
       }
 
