@@ -158,7 +158,7 @@ object VexRiscv_vdw_2{
                   cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
                   prediction = NONE,
                   catchAccessFault = false,
-                  compressedGen = true
+                  compressedGen = argConfig.compressed
                 )
             )
         }
