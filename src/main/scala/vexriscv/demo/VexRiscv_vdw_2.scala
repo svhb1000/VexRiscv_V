@@ -24,18 +24,30 @@ import scala.collection.mutable.ArrayBuffer
 //vdw_1 : 
 // - add icache from GenFullNoMmuMaxPerf
 // - add mul and div insns
+//vdw_2 : 
+// - cfu possible
+// - tcm possible --> still testing
 
 
 case class ArgConfig_2(
   simulcsr   : Boolean = false,
+  debug_jtag : Boolean = false,
   iCacheSize : Int = 4096,
-  dCacheSize : Int = 4096,
+  dCacheSize : Int = 0,
   compressed : Boolean = false,
   imemdw     : Int = 32,
+  use_cfu    : Boolean = false,
   fullshifter: Boolean = false,
+  
+  //set address of tcm region : first AND with 'mask' then compare with 'addr'. 
   tightiport : Boolean = false,
   tc_mask    : BigInt = 0xFFFF0000l,
   tc_addr    : BigInt = 0x00010000l,
+  
+  //extra io mask on top of bit31 cache bypass
+  io_mask : BigInt = 0xFFFF0000l,
+  io_addr : BigInt = 0x00020000l,
+  
   reset_vector : BigInt = 0x00000000l
 )
 
@@ -102,6 +114,9 @@ object VexRiscv_vdw_2{
     
     val parser = new scopt.OptionParser[ArgConfig_2]("VexRiscvGen") {
       opt[Boolean]("simulcsr")    action { (v, c) => c.copy(simulcsr = v)   } text("add csr's for simulation status report")
+
+      opt[Boolean]("debug_jtag")  action { (v, c) => c.copy(debug_jtag = v)   } text("add jtag debug interface")
+
       opt[Boolean]("compressed")  action { (v, c) => c.copy(compressed = v)   } text("infer cpu with compressed instruction set")
       
       opt[Int]("iCacheSize")     action { (v, c) => c.copy(iCacheSize = v) } text("Set instruction cache size, 0 mean no cache")
@@ -110,10 +125,14 @@ object VexRiscv_vdw_2{
       
       opt[Boolean]("fullshifter")  action { (v, c) => c.copy(fullshifter = v)   } text("use full barrel shifter instead of tiny slower implementation")
       
+      opt[Boolean]("use_cfu")      action { (v, c) => c.copy(fullshifter = v)   } text("instantiate cfu interface port")
       
       opt[Boolean]("tightiport")    action { (v, c) => c.copy(tightiport = v)   } text("add a tightly coupled instruction port to the datacache")
-      opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("mask applied toaddress of tightlycoupled ram")
-      opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for tightlycoupled ram")
+      opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("AND mask applied to address for tightlycoupled ram")
+      opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for match after masking address to check on tightly coupled address region")
+
+      opt[BigInt]("io_mask")        action { (v, c) => c.copy(io_mask = v) } text("AND mask applied to address of databus to check on cache bypass")
+      opt[BigInt]("io_addr")        action { (v, c) => c.copy(io_addr = v) } text("address to check for match after masking address to check on dcache bypass")
 
       opt[BigInt]("reset_vector")        action { (v, c) => c.copy(reset_vector = v) } text("reset vector")
 
@@ -146,7 +165,8 @@ object VexRiscv_vdw_2{
                   )
                 )
             if (argConfig.tightiport) {
-                icache.newTightlyCoupledPort(TightlyCoupledPortParameter("iBusTc", a => (a & argConfig.tc_mask) === argConfig.tc_addr))  // a => a(30 downto 28) === 0x0 && a(5)))
+                icache.newTightlyCoupledPort(TightlyCoupledPortParameter
+                    ("iBusTc", a => (a & argConfig.tc_mask) === argConfig.tc_addr))
             }
             plugins ++= List(icache)
         }      
@@ -155,7 +175,7 @@ object VexRiscv_vdw_2{
                 new IBusSimplePlugin(
                   resetVector = argConfig.reset_vector,
                   cmdForkOnSecondStage = false,
-                  cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what dies this mean?
+                  cmdForkPersistence = true, // false, otherwise exception in toAvalon. todo : what does this mean?
                   prediction = NONE,
                   catchAccessFault = false,
                   compressedGen = argConfig.compressed
@@ -176,18 +196,7 @@ object VexRiscv_vdw_2{
                     catchIllegal      = true,
                     catchUnaligned    = true
                   )
-                ),
-                if (argConfig.tightiport) {
-                    new StaticMemoryTranslatorPlugin(
-                        ioRange      = a => (a.msb) || ((a & argConfig.tc_mask) === argConfig.tc_addr)
-                        //ioRange      = ( _.msb )
-                        )
-                }
-                else {
-                    new StaticMemoryTranslatorPlugin(
-                       ioRange      = ( _.msb )
-                    )
-                }
+                )
             )
         }
         else {  
@@ -197,10 +206,20 @@ object VexRiscv_vdw_2{
                   catchAccessFault = false
                 ))
         }
+        plugins ++= List(
+             new StaticMemoryTranslatorPlugin(
+                    ioRange      = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
+                    //ioRange      = ( _.msb )
+                 )
+        )
+        
+        
+        if (argConfig.debug_jtag) {
+            plugins ++= List( new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
+                                              hardwareBreakpointCount=2))
+        }
         
         plugins ++= List(
-        new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
-                        hardwareBreakpointCount=2),
         new CsrPlugin(//CsrPluginConfig.smallest),
             CsrPluginConfig(
                     catchIllegalAccess = false,
@@ -252,6 +271,8 @@ object VexRiscv_vdw_2{
           pessimisticWriteRegFile = false,
           pessimisticAddressMatch = false
         ),
+        
+       
         new MulPlugin,
         new DivPlugin,
         new BranchPlugin(
@@ -278,42 +299,44 @@ object VexRiscv_vdw_2{
       )
 
       //CFU instantiation
-      plugins ++= List(
-        new CfuPlugin(
-          stageCount = 1,
-          allowZeroLatency = true,
-          withEnable = false,
-          stateAndIndexCsrOffset = -1, //make sure no csr is generated, otherwise an error will be generated
-          statusCsrOffset = -1,        //make sure no csr is generated, otherwise an error will be generated
-          encodings = List(
-            CfuPluginEncoding (
-              instruction = M"-------------------------0-01011", 
-                    // bit 5 :     
-                        //choose 'custom0', see as I-type insn like 'OP-IMM' (ADDI, SUBI, ...)
-                        //choose 'custom1', see as R-type insn like 'OP' (ADD, SUB, ...)
-              functionId = List(14 downto 12),
-              input2Kind = CfuPlugin.Input2Kind.RS
+      if(argConfig.use_cfu) {
+          plugins ++= List(
+            new CfuPlugin(
+              stageCount = 1,
+              allowZeroLatency = true,
+              withEnable = false,
+              stateAndIndexCsrOffset = -1, //make sure no csr is generated, otherwise an error will be generated
+              statusCsrOffset = -1,        //make sure no csr is generated, otherwise an error will be generated
+              encodings = List(
+                CfuPluginEncoding (
+                  instruction = M"-------------------------0-01011", 
+                        // bit 5 :     
+                            //choose 'custom0', see as I-type insn like 'OP-IMM' (ADDI, SUBI, ...)
+                            //choose 'custom1', see as R-type insn like 'OP' (ADD, SUB, ...)
+                  functionId = List(14 downto 12),
+                  input2Kind = CfuPlugin.Input2Kind.RS
+                )
+              ),
+              busParameter = CfuBusParameter(
+                CFU_VERSION = 0,
+                CFU_INTERFACE_ID_W = 0,
+                CFU_FUNCTION_ID_W = 3,
+                CFU_REORDER_ID_W = 0,
+                CFU_REQ_RESP_ID_W = 0,
+                CFU_INPUTS = 2,
+                CFU_INPUT_DATA_W = 32,
+                CFU_OUTPUTS = 1,
+                CFU_OUTPUT_DATA_W = 32,
+                CFU_FLOW_REQ_READY_ALWAYS = false,
+                CFU_FLOW_RESP_READY_ALWAYS = false,
+                CFU_WITH_STATUS = false,
+                CFU_RAW_INSN_W = 32,
+                CFU_CFU_ID_W = 0,
+                CFU_STATE_INDEX_NUM = 0
+              )
             )
-          ),
-          busParameter = CfuBusParameter(
-            CFU_VERSION = 0,
-            CFU_INTERFACE_ID_W = 0,
-            CFU_FUNCTION_ID_W = 3,
-            CFU_REORDER_ID_W = 0,
-            CFU_REQ_RESP_ID_W = 0,
-            CFU_INPUTS = 2,
-            CFU_INPUT_DATA_W = 32,
-            CFU_OUTPUTS = 1,
-            CFU_OUTPUT_DATA_W = 32,
-            CFU_FLOW_REQ_READY_ALWAYS = false,
-            CFU_FLOW_RESP_READY_ALWAYS = false,
-            CFU_WITH_STATUS = false,
-            CFU_RAW_INSN_W = 32,
-            CFU_CFU_ID_W = 0,
-            CFU_STATE_INDEX_NUM = 0
           )
-        )
-      )
+      }
       
       val cpuConfig = VexRiscvConfig(plugins)
       
