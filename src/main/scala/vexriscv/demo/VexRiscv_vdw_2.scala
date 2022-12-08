@@ -118,7 +118,7 @@ object VexRiscv_vdw_2{
       
       opt[Boolean]("fullshifter")  action { (v, c) => c.copy(fullshifter = v)   } text("use full barrel shifter instead of tiny slower implementation")
       
-      opt[Boolean]("use_cfu")      action { (v, c) => c.copy(fullshifter = v)   } text("instantiate cfu interface port")
+      opt[Boolean]("use_cfu")      action { (v, c) => c.copy(use_cfu = v)   } text("instantiate cfu interface port")
       
       opt[Boolean]("tightiport")    action { (v, c) => c.copy(tightiport = v)   } text("add a tightly coupled instruction port to the datacache")
       opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("AND mask applied to address for tightlycoupled ram")
