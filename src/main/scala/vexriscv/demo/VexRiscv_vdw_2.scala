@@ -11,16 +11,9 @@ import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
 
 import scala.collection.mutable.ArrayBuffer
 
-/**
- * Created by spinalvm on 14.07.17.
- */
-//class VexRiscvAvalon(debugClockDomain : ClockDomain) extends Component{
-//
-//}
 
 //vdw_0 : 
 // - copy from smallandproductive,
-//   changed cmdForkOnSecondStage to true, due to assertion in avalon bus interface
 //vdw_1 : 
 // - add icache from GenFullNoMmuMaxPerf
 // - add mul and div insns
@@ -33,14 +26,14 @@ case class ArgConfig_2(
   simulcsr   : Boolean = false,
   debug_jtag : Boolean = false,
   iCacheSize : Int = 4096,
-  dCacheSize : Int = 0,
+  dCacheSize : Int = 4096,
   compressed : Boolean = false,
   imemdw     : Int = 32,
   use_cfu    : Boolean = false,
   fullshifter: Boolean = false,
   
   //set address of tcm region : first AND with 'mask' then compare with 'addr'. 
-  tightiport : Boolean = false,
+  tightiport : Boolean = true,
   tc_mask    : BigInt = 0xFFFF0000l,
   tc_addr    : BigInt = 0x00010000l,
   
