@@ -10,6 +10,7 @@ import vexriscv.plugin._
 import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
 
 import scala.collection.mutable.ArrayBuffer
+import spinal.lib.cpu.riscv.debug.DebugTransportModuleParameter
 
 
 //vdw_0 : 
@@ -208,9 +209,23 @@ object VexRiscv_vdw_2{
         
         
         if (argConfig.debug_jtag) {
-            plugins ++= List( new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
-                                              hardwareBreakpointCount=2))
+//            plugins ++= List( new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
+//                                              hardwareBreakpointCount=2))
+            
+            //official RISCV debug implementation
+            plugins ++= List( new EmbeddedRiscvJtag(
+                                      p = DebugTransportModuleParameter(
+                                        addressWidth = 7,
+                                        version      = 1,
+                                        idle         = 7
+                                      ),
+                                      debugCd = ClockDomain.current.copy(reset = Bool().setName("debugReset")),
+                                      withTunneling = false,
+                                      withTap = true
+                                    )
+                            )
         }
+        
         
         plugins ++= List(
         new CsrPlugin(//CsrPluginConfig.smallest),
@@ -233,7 +248,8 @@ object VexRiscv_vdw_2{
                     ecallGen       = false,
                     wfiGenAsWait   = false,
                     ucycleAccess   = CsrAccess.NONE,
-                    uinstretAccess = CsrAccess.NONE
+                    uinstretAccess = CsrAccess.NONE,
+                    withPrivilegedDebug = true   //for the official RISCV debug implementation
                 )),
         new DecoderSimplePlugin(
           catchIllegalInstruction = false
