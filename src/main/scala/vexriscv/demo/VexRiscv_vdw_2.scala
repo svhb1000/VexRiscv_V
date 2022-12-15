@@ -32,7 +32,7 @@ case class ArgConfig_2(
   imemdw     : Int = 32,
   use_cfu    : Boolean = false,
   fullshifter: Boolean = false,
-  
+  catch_illegal : Boolean = false,
   //set address of tcm region : first AND with 'mask' then compare with 'addr'. 
   tightiport : Boolean = true,
   tc_mask    : BigInt = 0xFFFF0000l,
@@ -40,7 +40,7 @@ case class ArgConfig_2(
   
   //extra io mask on top of bit31 cache bypass
   io_mask : BigInt = 0xFFFF0000l,
-  io_addr : BigInt = 0x00020000l,
+  io_addr : BigInt = 0x00010000l,
   
   reset_vector : BigInt = 0x00000000l
 )
@@ -118,6 +118,9 @@ object VexRiscv_vdw_2{
       opt[Int]("imemdw")         action { (v, c) => c.copy(imemdw = v) }     text("Set instruction bus datawidth")
       
       opt[Boolean]("fullshifter")  action { (v, c) => c.copy(fullshifter = v)   } text("use full barrel shifter instead of tiny slower implementation")
+      
+      opt[Boolean]("catch_illegal")  action { (v, c) => c.copy(catch_illegal = v)   } text("enable catching illegal isntructions")
+      
       
       opt[Boolean]("use_cfu")      action { (v, c) => c.copy(use_cfu = v)   } text("instantiate cfu interface port")
       
@@ -252,7 +255,7 @@ object VexRiscv_vdw_2{
                     withPrivilegedDebug = true   //for the official RISCV debug implementation
                 )),
         new DecoderSimplePlugin(
-          catchIllegalInstruction = false
+          catchIllegalInstruction = argConfig.catch_illegal
         ),
         new RegFilePlugin(
           regFileReadyKind = plugin.SYNC,
