@@ -10,6 +10,7 @@ import vexriscv.plugin._
 import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
 
 import scala.collection.mutable.ArrayBuffer
+
 import spinal.lib.cpu.riscv.debug.DebugTransportModuleParameter
 
 
@@ -212,10 +213,7 @@ object VexRiscv_vdw_2{
         
         
         if (argConfig.debug_jtag) {
-//            plugins ++= List( new DebugPlugin(ClockDomain.current.clone(reset = Bool().setName("debugReset")), 
-//                                              hardwareBreakpointCount=2))
-            
-            //official RISCV debug implementation
+            //official RISCV debug protocol implementation
             plugins ++= List( new EmbeddedRiscvJtag(
                                       p = DebugTransportModuleParameter(
                                         addressWidth = 7,
@@ -252,7 +250,7 @@ object VexRiscv_vdw_2{
                     wfiGenAsWait   = false,
                     ucycleAccess   = CsrAccess.NONE,
                     uinstretAccess = CsrAccess.NONE,
-                    withPrivilegedDebug = true   //for the official RISCV debug implementation
+                    withPrivilegedDebug = argConfig.debug_jtag   //for the official RISCV debug implementation
                 )),
         new DecoderSimplePlugin(
           catchIllegalInstruction = argConfig.catch_illegal
@@ -385,17 +383,7 @@ object VexRiscv_vdw_2{
               .setName("dBusAvalon")
               .addTag(ClockDomainTag(ClockDomain.current))
           }
-          case plugin: DebugPlugin => plugin.debugClockDomain {
-            plugin.io.bus.setAsDirectionLess()
-            
-            val jtag = slave(new Jtag())
-              .setName("jtag")
-            jtag <> plugin.io.bus.fromJtag()
-            
-            plugin.io.resetOut
-              .addTag(ResetEmitterTag(plugin.debugClockDomain))
-              .parent = null //Avoid the io bundle to be interpreted as a QSys conduit
-          }
+          
           case _ =>
         }
         for (plugin <- cpuConfig.plugins) plugin match {
