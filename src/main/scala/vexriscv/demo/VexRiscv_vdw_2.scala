@@ -205,11 +205,22 @@ object VexRiscv_vdw_2{
                 ))
         }
         plugins ++= List(
-             new StaticMemoryTranslatorPlugin(
+/*             new StaticMemoryTranslatorPlugin(
                     ioRange      = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
                     //ioRange      = ( _.msb )
-                 )
+                 ),
+  */               
+                 
+                     new PmpPlugin(
+            regions = 16,
+            granularity = 32,
+            ioRange      = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
+
+//            ioRange = _(31 downto 28) === 0xf
+            )
+
         )
+        
         
         
         if (argConfig.debug_jtag) {
