@@ -39,6 +39,10 @@ case class ArgConfig_2(
   tc_mask    : BigInt = 0xFFFF0000l,
   tc_addr    : BigInt = 0x00010000l,
   
+  //pmp enable and nr of regions
+  use_pmp     : Boolean = false,
+  pmp_regions : Int = 16,
+  
   //extra io mask on top of bit31 cache bypass
   io_mask : BigInt = 0xFFFF0000l,
   io_addr : BigInt = 0x00010000l,
@@ -129,6 +133,11 @@ object VexRiscv_vdw_2{
       opt[BigInt]("tc_mask")        action { (v, c) => c.copy(tc_mask = v) } text("AND mask applied to address for tightlycoupled ram")
       opt[BigInt]("tc_addr")        action { (v, c) => c.copy(tc_addr = v) } text("address to check for match after masking address to check on tightly coupled address region")
 
+      opt[Boolean]("use_pmp")      action { (v, c) => c.copy(use_pmp = v)   } text("instantiate pmp unit")
+      opt[Int]("pmp_regions")      action { (v, c) => c.copy(pmp_regions = v) }     text("nr of regions in the physical memory protection unit")
+
+
+
       opt[BigInt]("io_mask")        action { (v, c) => c.copy(io_mask = v) } text("AND mask applied to address of databus to check on cache bypass")
       opt[BigInt]("io_addr")        action { (v, c) => c.copy(io_addr = v) } text("address to check for match after masking address to check on dcache bypass")
 
@@ -204,24 +213,25 @@ object VexRiscv_vdw_2{
                   catchAccessFault = false
                 ))
         }
-        plugins ++= List(
-/*             new StaticMemoryTranslatorPlugin(
+        
+        
+        if (argConfig.use_pmp) {
+            plugins ++= List(
+                new PmpPlugin(
+                    regions = argConfig.pmp_regions,
+                    granularity = 32,
+                    ioRange     = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
+      //            ioRange = _(31 downto 28) === 0xf
+                )
+            )            
+        } else {
+            plugins ++= List(
+               new StaticMemoryTranslatorPlugin(
                     ioRange      = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
                     //ioRange      = ( _.msb )
-                 ),
-  */               
-                 
-                     new PmpPlugin(
-            regions = 16,
-            granularity = 32,
-            ioRange      = a => (a.msb) || ((a & argConfig.io_mask) ===  argConfig.io_addr)
-
-//            ioRange = _(31 downto 28) === 0xf
+                 )
             )
-
-        )
-        
-        
+        }
         
         if (argConfig.debug_jtag) {
             //official RISCV debug protocol implementation
