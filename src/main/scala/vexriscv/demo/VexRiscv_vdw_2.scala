@@ -266,7 +266,7 @@ object VexRiscv_vdw_2{
                     mcauseAccess   = CsrAccess.READ_ONLY,
                     mbadaddrAccess = CsrAccess.READ_ONLY,
                     mcycleAccess   = CsrAccess.READ_ONLY,
-                    minstretAccess = CsrAccess.READ_WRITE,
+                    minstretAccess = CsrAccess.NONE,
                     ecallGen       = false,
                     wfiGenAsWait   = false,
                     ucycleAccess   = CsrAccess.NONE,
